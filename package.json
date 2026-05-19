@@ -3,8 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "node scripts/sync-notion.mjs && fumadocs-mdx && next build",
     "dev": "next dev",
+    "notion:sync": "node scripts/sync-notion.mjs",
     "start": "next start",
     "types:check": "fumadocs-mdx && next typegen && tsc --noEmit",
     "postinstall": "fumadocs-mdx",

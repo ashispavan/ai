@@ -25,7 +25,7 @@ export default function HomePage() {
             Open docs
           </Link>
           <Link
-            href="/docs/editorial-calendar"
+            href="/docs"
             className="rounded-full border border-fd-border px-5 py-2.5 text-sm font-medium"
           >
             Start writing
