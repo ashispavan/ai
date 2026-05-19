@@ -5,6 +5,7 @@
 .source
 /content/docs/*
 !/content/docs/.gitkeep
+/public/notion-assets
 
 # test & build
 /coverage

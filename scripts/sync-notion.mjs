@@ -1,8 +1,10 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 const notionVersion = '2026-03-11';
 const outputDir = path.join(process.cwd(), 'content', 'docs');
+const assetDir = path.join(process.cwd(), 'public', 'notion-assets');
 const apiKey = process.env.NOTION_API_KEY;
 const dataSourceId = process.env.NOTION_DATA_SOURCE_ID;
 const publishStatuses = new Set(['published', 'done', 'complete']);
@@ -77,6 +79,86 @@ function normalizeMarkdown(markdown) {
     .trim();
 }
 
+function imageExtension(url, contentType) {
+  const pathname = new URL(url).pathname;
+  const extension = path.extname(pathname);
+
+  if (extension) {
+    return extension;
+  }
+
+  switch (contentType.split(';')[0]) {
+    case 'image/jpeg':
+      return '.jpg';
+    case 'image/png':
+      return '.png';
+    case 'image/gif':
+      return '.gif';
+    case 'image/webp':
+      return '.webp';
+    case 'image/svg+xml':
+      return '.svg';
+    default:
+      return '.bin';
+  }
+}
+
+async function downloadImageAsset(pageId, imageUrl) {
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(imageUrl);
+  } catch {
+    return imageUrl;
+  }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    return imageUrl;
+  }
+
+  const response = await fetch(imageUrl);
+
+  if (!response.ok) {
+    console.warn(`Skipping image ${imageUrl}: request failed with ${response.status}`);
+    return imageUrl;
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+
+  if (!contentType.startsWith('image/')) {
+    console.warn(`Skipping image ${imageUrl}: expected image content, received ${contentType || 'unknown'}`);
+    return imageUrl;
+  }
+
+  const hash = createHash('sha256').update(imageUrl).digest('hex').slice(0, 16);
+  const extension = imageExtension(imageUrl, contentType);
+  const relativePath = `/notion-assets/${pageId}/${hash}${extension}`;
+  const filePath = path.join(process.cwd(), 'public', relativePath);
+
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, Buffer.from(await response.arrayBuffer()));
+
+  return relativePath;
+}
+
+async function localizeMarkdownImages(pageId, markdown) {
+  const imagePattern = /!\[([^\]]*)\]\((\S+?)(?:\s+(['"][^'"]*['"]))?\)/g;
+  let output = '';
+  let cursor = 0;
+
+  for (const match of markdown.matchAll(imagePattern)) {
+    const [fullMatch, alt, rawUrl, title = ''] = match;
+    const index = match.index ?? 0;
+    const localUrl = await downloadImageAsset(pageId, rawUrl);
+
+    output += markdown.slice(cursor, index);
+    output += `![${alt}](${localUrl}${title ? ` ${title}` : ''})`;
+    cursor = index + fullMatch.length;
+  }
+
+  return output + markdown.slice(cursor);
+}
+
 async function notionRequest(url, options = {}) {
   const headers = {
     ...notionHeaders,
@@ -149,7 +231,9 @@ async function getPageMarkdown(pageId) {
     console.warn(`Page ${pageId} returned truncated or unknown markdown blocks`);
   }
 
-  return normalizeMarkdown(response.markdown ?? '');
+  const markdown = await localizeMarkdownImages(pageId, response.markdown ?? '');
+
+  return normalizeMarkdown(markdown);
 }
 
 function makeItem(page) {
@@ -276,6 +360,7 @@ async function main() {
   }
 
   await rm(outputDir, { recursive: true, force: true });
+  await rm(assetDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
 
   for (const item of publishedItems.sort(compareItems)) {
