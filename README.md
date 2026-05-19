@@ -25,11 +25,25 @@ Required environment variables:
 - `NOTION_DATA_SOURCE_ID`: data source ID for the `AI Blog Content` database
 - `VERCEL_DEPLOY_HOOK_URL`: optional local helper URL for triggering the `notion-rebuild` Vercel
   deploy hook
+- `NOTION_WEBHOOK_VERIFICATION_TOKEN`: optional token from the Notion webhook verification flow,
+  used to validate signed Notion webhook payloads after the subscription is verified
 
 Notion rows are included in the site only when `Status` is `Published`, `Done`, or `Complete`.
 Rows with `Type` set to `Topic` or `Subtopic` become folders with an `index.mdx`; rows with `Type`
 set to `Post` become regular MDX pages. Use the `Parent` relation to nest a subtopic or post under
 another row.
+
+To trigger a Vercel deployment when Notion page properties change, create a Notion developer webhook
+subscription for `page.properties_updated` pointing to:
+
+```bash
+https://ai.ashis.dev/api/notion-webhook
+```
+
+During subscription verification, Notion sends a `verification_token` to the route. Read it from the
+Vercel function logs, add it as `NOTION_WEBHOOK_VERIFICATION_TOKEN`, then verify the subscription in
+Notion. Once active, changing a row's `Status` to `Done`, `Published`, or `Complete` triggers the
+configured Vercel deploy hook.
 
 Run a manual sync with:
 

@@ -3,6 +3,8 @@
 
 # generated content
 .source
+/content/docs/*
+!/content/docs/.gitkeep
 
 # test & build
 /coverage
