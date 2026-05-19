@@ -72,6 +72,7 @@ function yamlString(value) {
 function normalizeMarkdown(markdown) {
   return markdown
     .replace(/^---$/gm, '\\---')
+    .replace(/<col(?!group\b)([^>/]*?)>/g, '<col$1 />')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -174,13 +175,33 @@ function compareItems(left, right) {
   return left.order - right.order || left.title.localeCompare(right.title);
 }
 
+function itemLevel(item) {
+  switch (item.type.toLowerCase()) {
+    case 'topic':
+      return 0;
+    case 'subtopic':
+      return 1;
+    default:
+      return 2;
+  }
+}
+
+function parentForItem(item, itemsById) {
+  const itemRank = itemLevel(item);
+  const parents = item.parentIds
+    .map((id) => itemsById.get(id))
+    .filter((candidate) => candidate && itemLevel(candidate) < itemRank)
+    .sort(compareItems);
+
+  return parents[0];
+}
+
 function buildPathSegments(item, itemsById, stack = new Set()) {
   if (stack.has(item.id)) {
     throw new Error(`Circular Notion parent relation detected at "${item.title}"`);
   }
 
-  const parentId = item.parentIds[0];
-  const parent = parentId ? itemsById.get(parentId) : undefined;
+  const parent = parentForItem(item, itemsById);
 
   if (!parent) {
     return [item.slug];
@@ -220,7 +241,7 @@ async function writeMetaFiles(items, itemsById, pathById) {
   const childrenByParentPath = new Map();
 
   for (const item of items) {
-    const parent = item.parentIds[0] ? itemsById.get(item.parentIds[0]) : undefined;
+    const parent = parentForItem(item, itemsById);
     const parentPath = parent ? pathById.get(parent.id).join('/') : '';
     const children = childrenByParentPath.get(parentPath) ?? [];
     children.push(item);
@@ -259,7 +280,7 @@ async function main() {
 
   for (const item of publishedItems.sort(compareItems)) {
     const segments = pathById.get(item.id);
-    const hasChildren = publishedItems.some((candidate) => candidate.parentIds[0] === item.id);
+    const hasChildren = publishedItems.some((candidate) => parentForItem(candidate, itemsById)?.id === item.id);
     const isSection = ['topic', 'subtopic'].includes(item.type.toLowerCase()) || hasChildren;
     const filePath = isSection
       ? path.join(outputDir, ...segments, 'index.mdx')
